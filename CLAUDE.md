@@ -25,16 +25,16 @@ BRAPI_BASE_URL=https://sweetpotatobase.org/brapi/v2 PYTHONPATH=src uv run python
 docker compose up -d
 
 # Run tests
-pytest tests/mcp.py
+uv run pytest tests/mcp.py
 
 # Update test snapshots
-pytest tests/mcp.py --inline-snapshot=fix,create
+uv run pytest tests/mcp.py --inline-snapshot=fix,create
 
 # Format code
-ruff format .
+uv run ruff format .
 
 # Lint code
-ruff check .
+uv run ruff check .
 ```
 
 ## Environment Variables
@@ -46,7 +46,7 @@ ruff check .
 | `MODE` | `stdio` (default) or `http` |
 | `PORT` | HTTP port (default: 8000) |
 | `NAME` | Server identifier for logs/cache folders |
-| `AUTH_TYPE` / `BRAPI_AUTH_TYPE` | `sgn`, `oauth`, or none |
+| `AUTH_TYPE` / `BRAPI_AUTH_TYPE` | `sgn` enables SGN OAuth2; unset (or `none` for PSA) means no auth |
 | `BRAPI_USERNAME` / `BRAPI_PASSWORD` | Auth credentials |
 | `DOWNLOAD_DIR_OVERRIDE` | Custom path for downloads (STDIO only) |
 
@@ -71,20 +71,30 @@ src/
 │   ├── session/              # SessionManager for result persistence
 │   └── tools/                # Tool implementations by category
 └── utils/
-    └── logger.py             # Rotating file logger
+    ├── logger.py             # Rotating file logger
+    └── maintenance.py        # Startup cleanup of old logs/downloads (30-day rotation)
 ```
 
 ### PSA Server (`src/psa/`)
 
 Simplified alternative with cleaner tool set:
-- `tools/discovery.py` - list_programs, list_locations, list_seasons, search_trials
-- `tools/studies.py` - search_studies, get_study_details
-- `tools/observations.py` - get_observations, get_observation_variables, download_study
-- `tools/germplasm.py` - search_germplasm, get_germplasm_by_id, get_pedigree
+
+```
+src/psa/
+├── main.py                   # Entry point - STDIO-only MCP server
+├── config.py                 # PSAConfig loaded from BRAPI_* env vars
+├── client.py                 # BrAPIClient singleton (init_client / get_client)
+├── auth/                     # SGN auth implementation
+└── tools/
+    ├── discovery.py          # list_programs, list_locations, list_seasons, search_trials
+    ├── studies.py            # search_studies, get_study_details
+    ├── observations.py       # get_observations, get_observation_variables, download_study
+    └── germplasm.py          # search_germplasm, get_germplasm_by_id, get_pedigree
+```
 
 ### Key Patterns
 
-**Tool Registration**: Each tool module has a `register_*_tools(server, client, config)` function using `@server.tool()` decorator
+**Tool Registration**: Each tool module exposes a `register_*_tools(...)` function that uses the `@server.tool()` decorator. Signatures vary per module — PSA tools typically take `(server, client)` (observations also takes `config`); main-server tools take module-specific dependencies like `capabilities`, `get_session_cache`, etc.
 
 **Authentication**: Factory pattern - `create_sgn_session()` for OAuth2, `create_base_session()` for public access. SGN auth auto-refreshes on `InvalidTokenError`
 
